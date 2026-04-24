@@ -1,0 +1,102 @@
+
+services:
+  # ==========================================
+  # 1. CENTRAL HUB: METRICS & LOG STORAGE
+  # ==========================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - monitoring-network
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - monitoring-network
+
+  # ==========================================
+  # 2. LOG COLLECTION: FLEET-WIDE SHIPPING
+  # ==========================================
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    restart: unless-stopped
+    volumes:
+      - /var/log:/var/log:ro            # Local Fedora logs
+      - ./logs:/mnt/fleet_logs           # Simulated multi-server logs
+      - ./promtail-config.yaml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - monitoring-network
+
+  # ==========================================
+  # 3. MULTI-SERVER SIMULATION (THE SPOKES)
+  # ==========================================
+
+  # Local Fedora Machine Exporter
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    networks:
+      - monitoring-network
+
+  # Simulated Remote Server 01
+  server-a-exporter:
+    image: prom/node-exporter:latest
+    container_name: server-a-exporter
+    restart: unless-stopped
+    volumes:
+      - ./logs/server-a:/var/log/simulated # Maps to local folder for log simulation
+    ports:
+      - "9101:9100"
+    networks:
+      - monitoring-network
+
+  # Simulated Remote Server 02
+  server-b-exporter:
+    image: prom/node-exporter:latest
+    container_name: server-b-exporter
+    restart: unless-stopped
+    volumes:
+      - ./logs/server-b:/var/log/simulated # Maps to local folder for log simulation
+    ports:
+      - "9102:9100"
+    networks:
+      - monitoring-network
+
+  # ==========================================
+  # 4. PRESENTATION LAYER
+  # ==========================================
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - monitoring-network
+
+networks:
+  monitoring-network:
+    driver: bridge
+
+volumes:
+  prometheus-data:

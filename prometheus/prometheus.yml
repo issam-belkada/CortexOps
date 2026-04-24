@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: 'fleet-metrics'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          instance: 'local-fedora'
+      - targets: ['server-a-exporter:9100']
+        labels:
+          instance: 'remote-server-01'
+      - targets: ['server-b-exporter:9100']
+        labels:
+          instance: 'remote-server-02'
