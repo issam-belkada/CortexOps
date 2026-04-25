@@ -3,22 +3,23 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import datetime
 
-# Using the PostgreSQL instance you likely already have from your previous projects
-DATABASE_URL = "postgresql://user:password@localhost/monitoring_db"
+# Replace with your actual credentials
+DATABASE_URL = "postgresql://postgres:123456@localhost:5432/monitoring_db"
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-class AnomalyEvent(Base):
-    __tablename__ = "anomaly_events"
+class AnomalyRecord(Base):
+    __tablename__ = "anomaly_history"
 
     id = Column(Integer, primary_key=True, index=True)
     instance = Column(String)
-    cpu_value = Column(Float)
+    cpu_val = Column(Float)
+    ram_val = Column(Float)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
-    status = Column(String) # e.g., "Detected", "Resolved", "Ignored"
-    logs_summary = Column(String, nullable=True)
+    log_preview = Column(String, nullable=True)
 
-# Create the tables
-Base.metadata.create_all(bind=engine)
+# Create the tables in PostgreSQL
+def init_db():
+    Base.metadata.create_all(bind=engine)

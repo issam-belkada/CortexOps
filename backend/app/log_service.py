@@ -13,7 +13,7 @@ class LogAnalyzer:
         
         # This LogQL query filters by job and searches for error-related keywords
         # Note: We use the 'job' label we defined in promtail-config
-        logql = '{job="server_logs"}' 
+        logql = '{job="server_logs"}'
         
         params = {
             'query': logql,
