@@ -16,17 +16,14 @@ PROMETHEUS_URL = "http://localhost:9090/api/v1/query"
 QUERIES = {
     # irate is better for volatile metrics like CPU spikes
     "cpu": 'sum by(instance) (irate(node_cpu_seconds_total{mode!="idle"}[1m])) / count by(instance) (node_cpu_seconds_total{mode="idle"}) * 100',
-    # Alternatively, if you want the total sum of usage across all cores:
-    # "cpu": 'sum by(instance) (irate(node_cpu_seconds_total{mode!="idle"}[1m])) / count by(instance) (node_cpu_seconds_total{mode="idle"}) * 100',
-    
-    "ram": '100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))',
-    "disk": '100 - (node_filesystem_avail_bytes{mountpoint="/"} * 100 / node_filesystem_size_bytes{mountpoint="/"})',
-    "network": 'sum by(instance) (irate(node_network_receive_bytes_total[1m]))'
+    "ram": '100 * (1 - (node_memory_MemFree_bytes / node_memory_MemTotal_bytes))',
+    "disk": 'max by(instance) (100 - (node_filesystem_avail_bytes{device=~"/dev/.*", fstype!="tmpfs"} * 100 / node_filesystem_size_bytes{device=~"/dev/.*", fstype!="tmpfs"}))',
+    "network": 'sum by(instance) (rate(node_network_receive_bytes_total[1m]))'
 }
 
 def fetch_metric(name, query):
     try:
-        response = requests.get(PROMETHEUS_URL, params={'query': query}, timeout=2)
+        response = requests.get(PROMETHEUS_URL, params={'query': query}, timeout=1)
         results = response.json().get('data', {}).get('result', [])
         return {name: {res['metric']['instance']: float(res['value'][1]) for res in results}}
     except Exception as e:

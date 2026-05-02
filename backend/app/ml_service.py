@@ -41,7 +41,7 @@ class HybridAI:
         # --- A. Manual Threshold Engine (The "Expert") ---
         cpu_load = 1 if cpu > 70 else 0
         mem_load = 1 if ram > 70 else 0
-        delay = 1 if network > 150 else 0
+        delay = 1 if network > 876 else 0
         errors = self._parse_logs_for_errors(logs)
         
         # Combine into the feature vector your Random Forest expects
