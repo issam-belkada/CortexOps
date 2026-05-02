@@ -1,7 +1,7 @@
 import asyncio
 import requests
 import time
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from app.ml_service import detector
 from app.log_service import log_analyzer
 from app.database import SessionLocal, AnomalyRecord, init_db
@@ -116,6 +116,49 @@ async def get_fleet_intelligence():
         },
         "fleet": fleet_analysis
     }
+
+@app.get("/api/v1/fleet/history")
+async def get_fleet_history(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    db = SessionLocal()
+    try:
+        total_records = db.query(AnomalyRecord).count()
+        total_pages = (total_records + page_size - 1) // page_size if total_records > 0 else 0
+        offset = (page - 1) * page_size
+
+        records = (
+            db.query(AnomalyRecord)
+            .order_by(AnomalyRecord.timestamp.desc())
+            .offset(offset)
+            .limit(page_size)
+            .all()
+        )
+
+        return {
+            "page": page,
+            "page_size": page_size,
+            "total_records": total_records,
+            "total_pages": total_pages,
+            "history": [
+                {
+                    "id": record.id,
+                    "timestamp": record.timestamp.isoformat() if record.timestamp else None,
+                    "instance": record.instance,
+                    "cpu_val": record.cpu_val,
+                    "ram_val": record.ram_val,
+                    "disk_val": record.disk_val,
+                    "net_val": record.net_val,
+                    "trigger_type": record.trigger_type,
+                    "cause": record.cause,
+                    "logs": record.logs,
+                }
+                for record in records
+            ],
+        }
+    finally:
+        db.close()
 
 if __name__ == "__main__":
     import uvicorn

@@ -4,25 +4,37 @@ import '../globals.css';
 import { AlertTriangle, Clock, Server, TrendingUp } from 'lucide-react';
 
 export default function AnomaliesPage() {
-  const [history, setHistory] = useState([]);
+  const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
 
-  useEffect(() => {
-    fetch('http://localhost:8000/api/v1/fleet/history')
+  const fetchHistory = (currentPage: number, currentPageSize: number) => {
+    setLoading(true);
+    fetch(`http://localhost:8000/api/v1/fleet/history?page=${currentPage}&page_size=${currentPageSize}`)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
           setHistory(data);
-        } else if (data && Array.isArray(data.anomalies)) {
-          setHistory(data.anomalies);
+          setTotalRecords(data.length);
+          setTotalPages(1);
+        } else {
+          setHistory(Array.isArray(data.history) ? data.history : []);
+          setTotalRecords(data.total_records ?? 0);
+          setTotalPages(data.total_pages ?? 0);
         }
-        setLoading(false);
       })
       .catch(err => {
         console.error("Erreur Fetch:", err);
-        setLoading(false);
-      });
-  }, []);
+      })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchHistory(page, pageSize);
+  }, [page, pageSize]);
 
   if (loading) {
     return (
@@ -54,7 +66,8 @@ export default function AnomaliesPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Total Anomalies</p>
-              <p className="text-2xl font-bold text-gray-900">{history.length}</p>
+              <p className="text-2xl font-bold text-gray-900">{totalRecords}</p>
+              <p className="text-xs text-gray-500 mt-1">Showing {history.length} this page</p>
             </div>
             <div className="p-3 bg-red-100 rounded-lg">
               <AlertTriangle className="w-6 h-6 text-red-600" />
@@ -176,6 +189,39 @@ export default function AnomaliesPage() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="text-sm text-gray-600">
+            Page {page} of {totalPages || 1} · Showing {history.length} of {totalRecords} records
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              className="px-3 py-2 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+              disabled={page <= 1}
+              onClick={() => setPage(page - 1)}
+            >
+              Previous
+            </button>
+            <button
+              className="px-3 py-2 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+              disabled={page >= totalPages}
+              onClick={() => setPage(page + 1)}
+            >
+              Next
+            </button>
+            <select
+              className="px-3 py-2 rounded-md border border-gray-300 bg-white text-sm text-gray-700"
+              value={pageSize}
+              onChange={e => {
+                setPageSize(Number(e.target.value));
+                setPage(1);
+              }}
+            >
+              {[10, 20, 50, 100].map(size => (
+                <option key={size} value={size}>{size} per page</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
     </div>

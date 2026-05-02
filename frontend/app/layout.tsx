@@ -39,15 +39,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="mb-8">
               <h2 className="text-xl font-bold text-blue-600">Aurora</h2>
             </div>
-            <Link href="/" className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition">
+            <Link href="/" className="flex text-gray-800 items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition">
               <LayoutDashboard size={20} />
               Dashboard
             </Link>
-            <Link href="/instances" className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition">
+            <Link href="/instances" className="flex text-gray-800 items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition">
               <Server size={20} />
               Instances
             </Link>
-            <Link href="/anomalies" className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition">
+            <Link href="/anomalies" className="flex text-gray-800 items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition">
               <AlertOctagon size={20} />
               Anomalies
             </Link>
