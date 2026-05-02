@@ -14,10 +14,14 @@ init_db()
 PROMETHEUS_URL = "http://localhost:9090/api/v1/query"
 
 QUERIES = {
-    "cpu": '100 * (1 - avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])))',
+    # irate is better for volatile metrics like CPU spikes
+    "cpu": 'sum by(instance) (irate(node_cpu_seconds_total{mode!="idle"}[1m])) / count by(instance) (node_cpu_seconds_total{mode="idle"}) * 100',
+    # Alternatively, if you want the total sum of usage across all cores:
+    # "cpu": 'sum by(instance) (irate(node_cpu_seconds_total{mode!="idle"}[1m])) / count by(instance) (node_cpu_seconds_total{mode="idle"}) * 100',
+    
     "ram": '100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))',
     "disk": '100 - (node_filesystem_avail_bytes{mountpoint="/"} * 100 / node_filesystem_size_bytes{mountpoint="/"})',
-    "network": 'sum by(instance) (rate(node_network_receive_bytes_total[1m]))'
+    "network": 'sum by(instance) (irate(node_network_receive_bytes_total[1m]))'
 }
 
 def fetch_metric(name, query):
@@ -44,7 +48,6 @@ async def get_fleet_intelligence():
 
     try:
         for inst in instances:
-            # Prepare current feature vector for this specific instance
             current_metrics = [
                 all_data['cpu'].get(inst, 0),
                 all_data['ram'].get(inst, 0),
@@ -52,25 +55,25 @@ async def get_fleet_intelligence():
                 all_data['network'].get(inst, 0)
             ]
 
-            # 3. SELF-COMPARISON AI LOGIC
-            # This calls the method that compares the instance to its own history
-            status = detector.analyze_instance(inst, current_metrics)
+            # A. Fetch logs FIRST so we can pass them to the AI for RCA
+            logs = log_analyzer.get_logs_for_instance(inst)
+            log_messages = [l['message'] for l in logs] if logs else []
 
-            # 4. Fetch Logs and Save to DB only if truly Anomalous
-            logs = []
+            # B. CALL THE HYBRID AI
+            # Returns: status ("Anomalous"/"Healthy"), reason ("Spike -> Cause: MEMORY", etc.)
+            status, reason = detector.analyze(inst, current_metrics, logs=log_messages)
+
             if status == "Anomalous":
-                logs = log_analyzer.get_logs_for_instance(inst)
-                
-                # PERSISTENCE: Save the incident to PostgreSQL
+                # PERSISTENCE: Save the incident + the AI's predicted cause
                 new_event = AnomalyRecord(
                     instance=inst,
                     cpu_val=round(current_metrics[0], 2),
                     ram_val=round(current_metrics[1], 2),
-                    log_preview=str(logs[0]['message']) if logs else "No specific error logs found"
+                    # Store the AI's predicted reason in your DB
+                    log_preview=reason 
                 )
                 db.add(new_event)
 
-            # Build the response object for this instance
             fleet_analysis.append({
                 "instance": inst,
                 "metrics": {
@@ -80,6 +83,7 @@ async def get_fleet_intelligence():
                     "network": round(current_metrics[3], 2)
                 },
                 "status": status,
+                "reason": reason, # Add this to your API response for the React UI
                 "recent_logs": logs
             })
 

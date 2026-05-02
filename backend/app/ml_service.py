@@ -11,7 +11,7 @@ class HybridAI:
         # 2. Random Forest: Trained in Colab
         try:
             self.classifier = joblib.load(model_path)
-            print("✅ Random Forest Loaded")
+            print("Random Forest Loaded")
         except:
             self.classifier = None
             print("⚠️ root_cause_model.pkl not found!")
@@ -79,3 +79,5 @@ class HybridAI:
             return "Anomalous", f"{trigger_type} -> Cause: {cause}"
 
         return "Healthy", "Normal"
+    
+detector = HybridAI()
