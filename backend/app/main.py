@@ -58,16 +58,25 @@ async def get_fleet_intelligence():
 
             # B. CALL THE HYBRID AI
             # Returns: status ("Anomalous"/"Healthy"), reason ("Spike -> Cause: MEMORY", etc.)
-            status, reason = detector.analyze(inst, current_metrics, logs=log_messages)
+            status, analysis_result = detector.analyze(inst, current_metrics, logs=log_messages)
 
             if status == "Anomalous":
-                # PERSISTENCE: Save the incident + the AI's predicted cause
+                # analysis_result is "Trigger -> Cause" - we need to split them
+                try:
+                    trigger, predicted_cause = analysis_result.split(" -> Cause: ")
+                except ValueError:
+                    trigger, predicted_cause = "Unknown", analysis_result
+            
+                # Save to the new schema
                 new_event = AnomalyRecord(
                     instance=inst,
                     cpu_val=round(current_metrics[0], 2),
                     ram_val=round(current_metrics[1], 2),
-                    # Store the AI's predicted reason in your DB
-                    log_preview=reason 
+                    disk_val=round(current_metrics[2], 2),
+                    net_val=round(current_metrics[3], 2),
+                    trigger_type=trigger,
+                    cause=predicted_cause,
+                    logs=" | ".join(log_messages[:5]) # Store top 5 log lines for context
                 )
                 db.add(new_event)
 

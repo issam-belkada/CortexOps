@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import datetime
@@ -17,8 +17,12 @@ class AnomalyRecord(Base):
     instance = Column(String)
     cpu_val = Column(Float)
     ram_val = Column(Float)
+    disk_val = Column(Float)
+    net_val = Column(Float)
+    trigger_type = Column(String)
+    cause = Column(String)
+    logs = Column(Text, nullable=True)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
-    log_preview = Column(String, nullable=True)
 
 # Create the tables in PostgreSQL
 def init_db():
