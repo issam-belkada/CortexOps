@@ -5,8 +5,15 @@ from fastapi import FastAPI
 from app.ml_service import detector
 from app.log_service import log_analyzer
 from app.database import SessionLocal, AnomalyRecord, init_db
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Ensure Database Tables are created
 init_db()
