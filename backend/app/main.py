@@ -30,7 +30,7 @@ QUERIES = {
 
 def fetch_metric(name, query):
     try:
-        response = requests.get(PROMETHEUS_URL, params={'query': query}, timeout=1)
+        response = requests.get(PROMETHEUS_URL, params={'query': query}, timeout=2)
         results = response.json().get('data', {}).get('result', [])
         return {name: {res['metric']['instance']: float(res['value'][1]) for res in results}}
     except Exception as e:
@@ -65,14 +65,14 @@ async def get_fleet_intelligence():
 
             # B. CALL THE HYBRID AI
             # Returns: status ("Anomalous"/"Healthy"), reason ("Spike -> Cause: MEMORY", etc.)
-            status, analysis_result = detector.analyze(inst, current_metrics, logs=log_messages)
+            status, reason = detector.analyze(inst, current_metrics, logs=log_messages)
 
             if status == "Anomalous":
                 # analysis_result is "Trigger -> Cause" - we need to split them
                 try:
-                    trigger, predicted_cause = analysis_result.split(" -> Cause: ")
+                    trigger, predicted_cause = reason.split(" -> Cause: ")
                 except ValueError:
-                    trigger, predicted_cause = "Unknown", analysis_result
+                    trigger, predicted_cause = "Unknown", reason
             
                 # Save to the new schema
                 new_event = AnomalyRecord(
