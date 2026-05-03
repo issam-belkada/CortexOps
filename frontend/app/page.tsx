@@ -100,58 +100,36 @@ export default function Dashboard() {
 
       {/* Charts and Tables Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Instances List */}
         <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 shadow-sm">
           <div className="p-6 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900">Fleet Instances</h3>
-            <p className="text-sm text-gray-600">Real-time monitoring of all instances</p>
+            <h3 className="text-lg font-semibold text-gray-900">Fleet Overview</h3>
+            <p className="text-sm text-gray-600">The instance list is now available on the dedicated Instances page.</p>
           </div>
-          <div className="divide-y divide-gray-200">
-            {data.fleet?.map((server: any) => (
-              <div key={server.instance} className="p-6 hover:bg-gray-50">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-3 h-3 rounded-full ${server.status === 'Anomalous' ? 'bg-red-500' : 'bg-green-500'}`}></div>
-                    <h4 className="font-medium text-gray-900">{server.instance}</h4>
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                      server.status === 'Anomalous'
-                        ? 'bg-red-100 text-red-800'
-                        : 'bg-green-100 text-green-800'
-                    }`}>
-                      {server.status}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Metrics */}
-                <div className="grid grid-cols-4 gap-4 text-sm">
-                  <div className="text-center">
-                    <p className="text-gray-600">CPU</p>
-                    <p className="font-semibold text-gray-900">{server.metrics.cpu}%</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-gray-600">RAM</p>
-                    <p className="font-semibold text-gray-900">{server.metrics.ram}%</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-gray-600">Disk</p>
-                    <p className="font-semibold text-gray-900">{server.metrics.disk}%</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-gray-600">Network</p>
-                    <p className="font-semibold text-gray-900">{server.metrics.network} KB/s</p>
-                  </div>
-                </div>
-
-                {/* AI Diagnosis */}
-                {server.reason && (
-                  <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                    <p className="text-xs font-medium text-gray-600 uppercase mb-1">AI Diagnosis</p>
-                    <p className="text-sm text-gray-900">{server.reason}</p>
-                  </div>
-                )}
+          <div className="p-6 space-y-4">
+            <div className="rounded-xl border border-dashed border-gray-200 p-6">
+              <h4 className="text-sm font-semibold text-gray-900 mb-2">New Instance list location</h4>
+              <p className="text-sm text-gray-600 mb-4">
+                Click through to the Instances page to browse your fleet and open a specific instance dashboard.
+              </p>
+              <a
+                href="/instances"
+                className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-blue-600 text-white shadow-sm hover:bg-blue-700"
+              >
+                View Instances
+              </a>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-gray-50 p-5 rounded-xl">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Fleet health</p>
+                <p className="mt-3 text-2xl font-semibold text-gray-900">{data.fleet?.length ? Math.round(((data.fleet.length - (data.summary?.anomalies || 0)) / data.fleet.length)*100) : 0}%</p>
+                <p className="mt-2 text-sm text-gray-500">Healthy instances percentage</p>
               </div>
-            ))}
+              <div className="bg-gray-50 p-5 rounded-xl">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Data refresh</p>
+                <p className="mt-3 text-2xl font-semibold text-gray-900">Every 3 seconds</p>
+                <p className="mt-2 text-sm text-gray-500">Live metrics from Prometheus</p>
+              </div>
+            </div>
           </div>
         </div>
 
