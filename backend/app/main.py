@@ -8,6 +8,7 @@ from app.ml_service import detector
 from app.log_service import log_analyzer
 from app.database import SessionLocal, AnomalyRecord, InstanceStatus, init_db
 from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime, timedelta
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CRITICAL: Define client lists BEFORE routes and lifespan so every coroutine
@@ -224,16 +225,15 @@ def process_monitoring_cycle(instances, all_data) -> list[dict]:
 
     try:
         for inst in instances:
+            # ... (metric collection and detector analysis remain the same)
             current_metrics = [
                 all_data["cpu"].get(inst, 0),
                 all_data["ram"].get(inst, 0),
                 all_data["disk"].get(inst, 0),
                 all_data["network"].get(inst, 0),
             ]
-
             logs = log_analyzer.get_logs_for_instance(inst)
             log_messages = [l["message"] for l in logs if "message" in l]
-
             status, reason = detector.analyze(inst, current_metrics, logs=log_messages)
 
             # Upsert InstanceStatus
@@ -251,8 +251,19 @@ def process_monitoring_cycle(instances, all_data) -> list[dict]:
                 except ValueError:
                     trigger, predicted_cause = "Unknown", reason
 
-                log_str = " | ".join(log_messages[:5])
+                two_hours_ago = datetime.utcnow() - timedelta(hours=2)
+                existing_anomaly = db.query(AnomalyRecord).filter(
+                    AnomalyRecord.instance == inst,
+                    AnomalyRecord.trigger_type == trigger,
+                    AnomalyRecord.cause == predicted_cause,
+                    AnomalyRecord.verified == False,
+                    AnomalyRecord.timestamp >= two_hours_ago
+                ).first()
 
+                if existing_anomaly:
+                    continue 
+
+                log_str = " | ".join(log_messages[:5])
                 new_event = AnomalyRecord(
                     instance=inst,
                     cpu_val=round(current_metrics[0], 2),
@@ -262,15 +273,12 @@ def process_monitoring_cycle(instances, all_data) -> list[dict]:
                     trigger_type=trigger,
                     cause=predicted_cause,
                     logs=log_str,
+                    verified=False
                 )
                 db.add(new_event)
-
-                # flush() writes to DB and populates server-generated fields
-                # (id, timestamp) while the session is still open so we can
-                # safely read them below.
                 db.flush()
 
-                # Serialize to a plain dict NOW — before db.close()
+                # CRITICAL: Added 'verified' to the dictionary sent to WebSockets
                 new_anomalies.append({
                     "id":           new_event.id,
                     "timestamp":    new_event.timestamp.isoformat() if new_event.timestamp else None,
@@ -282,15 +290,16 @@ def process_monitoring_cycle(instances, all_data) -> list[dict]:
                     "trigger_type": new_event.trigger_type,
                     "cause":        new_event.cause,
                     "logs":         new_event.logs,
+                    "verified":     new_event.verified, # Sent to frontend via WS
                 })
 
         db.commit()
     except Exception as exc:
-        print(f"[Monitor] DB error in monitoring cycle: {exc}")
+        print(f"[Monitor] DB error: {exc}")
         db.rollback()
         raise
     finally:
-        db.close()  # safe — all anomalies already serialized to plain dicts
+        db.close()
 
     return new_anomalies
 
@@ -401,10 +410,25 @@ async def get_fleet_history(
                     "trigger_type": r.trigger_type,
                     "cause":        r.cause,
                     "logs":         r.logs,
+                    "verified":     r.verified, # Added for the History view
                 }
                 for r in records
             ],
         }
+    finally:
+        db.close()
+        
+
+@app.post("/api/v1/anomalies/{anomaly_id}/verify")
+async def verify_anomaly(anomaly_id: int):
+    db = SessionLocal()
+    try:
+        record = db.query(AnomalyRecord).filter(AnomalyRecord.id == anomaly_id).first()
+        if record:
+            record.verified = True
+            db.commit()
+            return {"status": "success", "message": f"Anomaly {anomaly_id} verified."}
+        return {"status": "error", "message": "Not found"}, 404
     finally:
         db.close()
 
