@@ -65,7 +65,7 @@ class HybridAI:
             
             # Double check: Only alert if it's an outlier AND a high spike (+30%)
             history_mean = np.mean(self.history, axis=0)
-            if pred == -1 and (cpu > history_mean[0] * 1.30 or ram > history_mean[1] * 1.30):
+            if pred == -1 and (cpu > history_mean[0] * 1.50 or ram > history_mean[1] * 1.50):
                 is_outlier = True
 
         # --- C. Final Decision ---

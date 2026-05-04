@@ -1,206 +1,243 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import '../globals.css';
 import { AlertTriangle, Clock, Server, TrendingUp } from 'lucide-react';
+import { getApiUrl } from '../lib/backend';
+import { useWebSocket } from '../lib/websocket-context';
+
+type AnomalyEvent = {
+  id: string;
+  timestamp: string;
+  instance: string;
+  trigger_type: string;
+  cause: string;
+  cpu_val: number;
+  ram_val: number;
+  disk_val: number;
+  net_val: number;
+};
 
 export default function AnomaliesPage() {
-  const [history, setHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<AnomalyEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [totalRecords, setTotalRecords] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const { subscribe } = useWebSocket();
+  const oneDayAgo = useMemo(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 1);
+    return date;
+  }, []);
 
-  const fetchHistory = (currentPage: number, currentPageSize: number) => {
+  const fetchHistory = async (currentPage: number, currentPageSize: number) => {
     setLoading(true);
-    fetch(`http://localhost:8000/api/v1/fleet/history?page=${currentPage}&page_size=${currentPageSize}`)
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setHistory(data);
-          setTotalRecords(data.length);
-          setTotalPages(1);
-        } else {
-          setHistory(Array.isArray(data.history) ? data.history : []);
-          setTotalRecords(data.total_records ?? 0);
-          setTotalPages(data.total_pages ?? 0);
-        }
-      })
-      .catch(err => {
-        console.error("Erreur Fetch:", err);
-      })
-      .finally(() => setLoading(false));
+    try {
+      const res = await fetch(getApiUrl(`/api/v1/fleet/history?page=${currentPage}&page_size=${currentPageSize}`));
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setHistory(data);
+        setTotalRecords(data.length);
+        setTotalPages(1);
+      } else {
+        setHistory(Array.isArray(data.history) ? data.history : []);
+        setTotalRecords(data.total_records ?? 0);
+        setTotalPages(data.total_pages ?? 0);
+      }
+    } catch (err) {
+      console.error('Erreur Fetch:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    fetchHistory(page, pageSize);
+    const loadHistory = async () => {
+      await fetchHistory(page, pageSize);
+    };
+    loadHistory();
   }, [page, pageSize]);
+
+  const getTriggerBadgeClass = (triggerType: string) => {
+    if (triggerType === 'critical') {
+      return 'bg-red-500/15 text-red-300';
+    }
+    if (triggerType === 'warning') {
+      return 'bg-yellow-400/15 text-yellow-200';
+    }
+    return 'bg-cyan-500/15 text-cyan-200';
+  };
+
+  useEffect(() => {
+    // Subscribe to new anomalies
+    const unsubscribe = subscribe('anomalies', (newAnomaly) => {
+      console.log('New anomaly received:', newAnomaly);
+      setHistory((prev) => [newAnomaly, ...prev]);
+      setTotalRecords((prev) => prev + 1);
+    });
+
+    return unsubscribe;
+  }, [subscribe]);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-64">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading anomaly history...</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400 mx-auto mb-4"></div>
+          <p className="text-slate-300">Loading anomaly history...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-slate-100">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="p-2 bg-red-100 rounded-lg">
-          <AlertTriangle className="w-6 h-6 text-red-600" />
+        <div className="p-3 bg-red-600/10 rounded-2xl">
+          <AlertTriangle className="w-6 h-6 text-red-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Anomaly History</h1>
-          <p className="text-gray-600">Monitor and analyze system anomalies and performance issues</p>
+          <h1 className="text-2xl font-bold text-white">Anomaly History</h1>
+          <p className="text-slate-400">Monitor and analyze system anomalies and performance issues</p>
         </div>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-          <div className="flex items-center justify-between">
+        <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-xl shadow-slate-950/20">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-gray-600">Total Anomalies</p>
-              <p className="text-2xl font-bold text-gray-900">{totalRecords}</p>
-              <p className="text-xs text-gray-500 mt-1">Showing {history.length} this page</p>
+              <p className="text-sm font-medium text-slate-400">Total Anomalies</p>
+              <p className="text-2xl font-bold text-white">{totalRecords}</p>
+              <p className="text-xs text-slate-500 mt-1">Showing {history.length} this page</p>
             </div>
-            <div className="p-3 bg-red-100 rounded-lg">
-              <AlertTriangle className="w-6 h-6 text-red-600" />
+            <div className="p-3 bg-red-600/10 rounded-2xl">
+              <AlertTriangle className="w-6 h-6 text-red-400" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-          <div className="flex items-center justify-between">
+        <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-xl shadow-slate-950/20">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-gray-600">Critical Issues</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {history.filter((event: any) => event.trigger_type === 'critical').length}
+              <p className="text-sm font-medium text-slate-400">Critical Issues</p>
+              <p className="text-2xl font-bold text-white">
+                {history.filter((event) => event.trigger_type === 'critical').length}
               </p>
             </div>
-            <div className="p-3 bg-orange-100 rounded-lg">
-              <TrendingUp className="w-6 h-6 text-orange-600" />
+            <div className="p-3 bg-orange-500/10 rounded-2xl">
+              <TrendingUp className="w-6 h-6 text-orange-300" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-          <div className="flex items-center justify-between">
+        <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-xl shadow-slate-950/20">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-gray-600">Affected Instances</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {new Set(history.map((event: any) => event.instance)).size}
+              <p className="text-sm font-medium text-slate-400">Affected Instances</p>
+              <p className="text-2xl font-bold text-white">
+                {new Set(history.map((event) => event.instance)).size}
               </p>
             </div>
-            <div className="p-3 bg-blue-100 rounded-lg">
-              <Server className="w-6 h-6 text-blue-600" />
+            <div className="p-3 bg-cyan-500/10 rounded-2xl">
+              <Server className="w-6 h-6 text-cyan-300" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-          <div className="flex items-center justify-between">
+        <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-xl shadow-slate-950/20">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-gray-600">Last 24h</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {history.filter((event: any) => {
+              <p className="text-sm font-medium text-slate-400">Last 24h</p>
+              <p className="text-2xl font-bold text-white">
+                {history.filter((event) => {
                   const eventTime = new Date(event.timestamp);
-                  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
                   return eventTime > oneDayAgo;
                 }).length}
               </p>
             </div>
-            <div className="p-3 bg-green-100 rounded-lg">
-              <Clock className="w-6 h-6 text-green-600" />
+            <div className="p-3 bg-emerald-500/10 rounded-2xl">
+              <Clock className="w-6 h-6 text-emerald-300" />
             </div>
           </div>
         </div>
       </div>
 
       {/* Anomalies Table */}
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">Recent Anomalies</h3>
+      <div className="bg-slate-900 rounded-3xl border border-slate-800 shadow-xl shadow-slate-950/20 overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-800">
+          <h3 className="text-lg font-semibold text-white">Recent Anomalies</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50">
+            <thead className="bg-slate-950">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                   Timestamp
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                   Instance
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                   Type
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                   Cause
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                   CPU
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                   RAM
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                   Disk
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                   Network
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-slate-900 divide-y divide-slate-800">
               {history && history.length > 0 ? (
-                history.map((event: any) => (
-                  <tr key={event.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                history.map((event) => (
+                  <tr key={event.id} className="hover:bg-slate-950">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-200">
                       {new Date(event.timestamp).toLocaleString()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
                       {event.instance}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        event.trigger_type === 'critical'
-                          ? 'bg-red-100 text-red-800'
-                          : event.trigger_type === 'warning'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-blue-100 text-blue-800'
-                      }`}>
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getTriggerBadgeClass(event.trigger_type)}`}>
                         {event.trigger_type}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-200">
                       {event.cause}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-slate-200">
                       {event.cpu_val}%
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-slate-200">
                       {event.ram_val}%
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-slate-200">
                       {event.disk_val}%
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-slate-200">
                       {event.net_val}%
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center">
+                  <td colSpan={8} className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center">
-                      <AlertTriangle className="w-12 h-12 text-gray-400 mb-4" />
-                      <p className="text-gray-500 text-sm">No anomalies detected in the database.</p>
+                      <AlertTriangle className="w-12 h-12 text-slate-500 mb-4" />
+                      <p className="text-slate-400 text-sm">No anomalies detected in the database.</p>
                     </div>
                   </td>
                 </tr>
@@ -208,27 +245,28 @@ export default function AnomaliesPage() {
             </tbody>
           </table>
         </div>
-        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="text-sm text-gray-600">
+        <div className="px-6 py-4 border-t border-slate-800 bg-slate-950 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="text-sm text-slate-400">
             Page {page} of {totalPages || 1} · Showing {history.length} of {totalRecords} records
           </div>
           <div className="flex items-center gap-2">
             <button
-              className="px-3 py-2 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+              className="px-3 py-2 rounded-md bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-50"
               disabled={page <= 1}
               onClick={() => setPage(page - 1)}
             >
               Previous
             </button>
             <button
-              className="px-3 py-2 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+              className="px-3 py-2 rounded-md bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-50"
               disabled={page >= totalPages}
               onClick={() => setPage(page + 1)}
             >
               Next
             </button>
             <select
-              className="px-3 py-2 rounded-md border border-gray-300 bg-white text-sm text-gray-700"
+              aria-label="Change records per page"
+              className="px-3 py-2 rounded-md border border-slate-700 bg-slate-950 text-sm text-slate-200"
               value={pageSize}
               onChange={e => {
                 setPageSize(Number(e.target.value));

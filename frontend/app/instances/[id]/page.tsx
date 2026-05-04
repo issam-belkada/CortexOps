@@ -4,33 +4,43 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import '../../globals.css'; // Cette ligne est INDISPENSABLE
 import { AreaChart, Area, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { getApiUrl } from '../../lib/backend';
+import { useWebSocket } from '../../lib/websocket-context';
 
 export default function InstanceDetail() {
   const { id } = useParams();
   const [instanceData, setInstanceData] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const { subscribe } = useWebSocket();
 
   useEffect(() => {
-    const fetchInstanceData = async () => {
+    const fetchHistory = async () => {
       try {
-        const fleetResponse = await fetch('http://localhost:8000/api/v1/fleet/intelligence');
-        const fleetJson = await fleetResponse.json();
-        const instance = (fleetJson.fleet ?? []).find((item: any) => item.instance === id);
-        setInstanceData(instance || null);
-
-        const historyResponse = await fetch('http://localhost:8000/api/v1/fleet/history?page=1&page_size=100');
+        const historyResponse = await fetch(getApiUrl(`/api/v1/fleet/history?page=1&page_size=100`));
         const historyJson = await historyResponse.json();
         setHistory((historyJson.history ?? []).filter((record: any) => record.instance === id));
       } catch (error) {
-        console.error('Failed to load instance details', error);
-      } finally {
-        setLoading(false);
+        console.error('Failed to load history', error);
       }
     };
 
-    fetchInstanceData();
-  }, [id]);
+    const unsubscribe = subscribe('fleet', (data) => {
+      const instance = (data.fleet ?? []).find((item: any) => item.instance === id);
+      if (instance) {
+        setInstanceData(instance);
+        setLoading(false);
+      }
+    });
+
+    fetchHistory();
+    const historyInterval = setInterval(fetchHistory, 10000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(historyInterval);
+    };
+  }, [id, subscribe]);
 
   const monthlyData = useMemo(() => {
     if (!instanceData) return [];
@@ -50,10 +60,25 @@ export default function InstanceDetail() {
     });
   }, [instanceData]);
 
+  const anomalyCounts = useMemo(() => {
+    return history.reduce(
+      (counts, record: any) => {
+        if (record.trigger_type === 'critical') counts.critical += 1;
+        else if (record.trigger_type === 'warning') counts.warning += 1;
+        else counts.info += 1;
+        return counts;
+      },
+      { critical: 0, warning: 0, info: 0 }
+    );
+  }, [history]);
+
+  const statusColor = instanceData?.status === 'Anomalous' ? 'text-rose-400' : 'text-emerald-400';
+  const statusBadge = instanceData?.status === 'Anomalous' ? 'bg-rose-500/10 text-rose-300' : 'bg-emerald-500/10 text-emerald-300';
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-2 border-slate-700 border-t-cyan-400"></div>
       </div>
     );
   }
@@ -61,17 +86,17 @@ export default function InstanceDetail() {
   if (!instanceData) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4 rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-xl shadow-slate-950/30">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Instance: {id}</h1>
-            <p className="text-gray-600">No metrics found for this instance.</p>
+            <h1 className="text-3xl font-semibold text-slate-100">Instance: {id}</h1>
+            <p className="mt-2 text-slate-400">No metrics found for this instance.</p>
           </div>
-          <Link href="/instances" className="text-blue-600 hover:underline">
+          <Link href="/instances" className="rounded-2xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-cyan-300 hover:bg-slate-800">
             Back to instances
           </Link>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-          <p className="text-gray-600">If the instance exists, refresh after the next data cycle completes.</p>
+        <div className="rounded-3xl border border-slate-800 bg-slate-950 p-6 text-slate-400 shadow-xl shadow-slate-950/30">
+          <p>If the instance exists, refresh after the next data cycle completes.</p>
         </div>
       </div>
     );
@@ -79,103 +104,148 @@ export default function InstanceDetail() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Instance: {id}</h1>
-          <p className="text-gray-600">Detailed metrics and monthly trends</p>
-        </div>
-        <Link href="/instances" className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
-          Back to instances
-        </Link>
-      </div>
+      <div className="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-xl shadow-slate-950/40">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-sm uppercase tracking-[0.24em] text-cyan-300/80">Instance detail</p>
+            <h1 className="mt-3 text-4xl font-semibold text-slate-100">{id}</h1>
+            <p className="mt-2 max-w-2xl text-sm text-slate-400">Live overview of instance health, anomalies, and usage trends.</p>
+          </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-          <p className="text-sm font-medium text-gray-600">Status</p>
-          <p className={`mt-3 text-2xl font-bold ${instanceData.status === 'Anomalous' ? 'text-red-600' : 'text-green-600'}`}>
-            {instanceData.status}
-          </p>
-          <p className="mt-2 text-sm text-gray-500">{instanceData.reason}</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-          <p className="text-sm font-medium text-gray-600">CPU Usage</p>
-          <p className="mt-3 text-2xl font-bold text-gray-900">{instanceData.metrics.cpu}%</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-          <p className="text-sm font-medium text-gray-600">RAM Usage</p>
-          <p className="mt-3 text-2xl font-bold text-gray-900">{instanceData.metrics.ram}%</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-          <p className="text-sm font-medium text-gray-600">Disk Usage</p>
-          <p className="mt-3 text-2xl font-bold text-gray-900">{instanceData.metrics.disk}%</p>
+          <div className="inline-flex flex-wrap items-center gap-3 text-sm text-slate-300">
+            <span className={`rounded-full border border-slate-700 px-3 py-1.5 font-medium ${statusBadge}`}>{instanceData.status}</span>
+            <Link href="/instances" className="rounded-2xl bg-slate-900 px-4 py-2 text-cyan-300 transition hover:bg-slate-800">
+              Back to instances
+            </Link>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Monthly Metrics</h3>
-          <div className="space-y-6">
-            {['cpu', 'ram', 'disk', 'network'].map((metric) => (
-              <div key={metric} className="rounded-2xl bg-gray-50 p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm font-semibold text-gray-900">{metric.toUpperCase()}</p>
-                  <p className="text-sm text-gray-500">
-                    Current {instanceData.metrics[metric]}{metric === 'network' ? ' KB/s' : '%'}
-                  </p>
-                </div>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={monthlyData} margin={{ top: 5, right: 15, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis dataKey="day" axisLine={false} tickLine={false} tick={false} />
-                      <YAxis stroke="#6b7280" width={30} />
-                      <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
-                      <Area
-                        type="monotone"
-                        dataKey={metric}
-                        stroke={metric === 'cpu' ? '#3b82f6' : metric === 'ram' ? '#10b981' : metric === 'disk' ? '#8b5cf6' : '#f97316'}
-                        fill={metric === 'cpu' ? '#dbeafe' : metric === 'ram' ? '#d1fae5' : metric === 'disk' ? '#ede9fe' : '#ffedd5'}
-                        fillOpacity={0.6}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            ))}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(420px,0.8fr)_minmax(280px,0.4fr)]">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-3xl border border-slate-800 bg-slate-950 p-5 shadow-xl shadow-slate-950/30">
+            <p className="text-xs uppercase tracking-[0.22em] text-slate-500">CPU</p>
+            <p className="mt-4 text-3xl font-semibold text-slate-100">{instanceData.metrics.cpu}%</p>
+            <p className="mt-2 text-sm text-slate-400">Current usage</p>
+          </div>
+          <div className="rounded-3xl border border-slate-800 bg-slate-950 p-5 shadow-xl shadow-slate-950/30">
+            <p className="text-xs uppercase tracking-[0.22em] text-slate-500">RAM</p>
+            <p className="mt-4 text-3xl font-semibold text-slate-100">{instanceData.metrics.ram}%</p>
+            <p className="mt-2 text-sm text-slate-400">Current usage</p>
+          </div>
+          <div className="rounded-3xl border border-slate-800 bg-slate-950 p-5 shadow-xl shadow-slate-950/30">
+            <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Disk</p>
+            <p className="mt-4 text-3xl font-semibold text-slate-100">{instanceData.metrics.disk}%</p>
+            <p className="mt-2 text-sm text-slate-400">Current usage</p>
+          </div>
+          <div className="rounded-3xl border border-slate-800 bg-slate-950 p-5 shadow-xl shadow-slate-950/30">
+            <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Network</p>
+            <p className="mt-4 text-3xl font-semibold text-slate-100">{instanceData.metrics.network ?? 0} KB/s</p>
+            <p className="mt-2 text-sm text-slate-400">Throughput</p>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Anomalies</h3>
-          {history.length > 0 ? (
-            <div className="space-y-4">
-              {history.map((record: any) => (
-                <div key={record.id} className="rounded-2xl border border-gray-200 bg-white p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-gray-900">{new Date(record.timestamp).toLocaleString()}</p>
-                    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                      record.trigger_type === 'critical'
-                        ? 'bg-red-100 text-red-700'
-                        : record.trigger_type === 'warning'
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-blue-100 text-blue-700'
-                    }`}>
-                      {record.trigger_type}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm text-gray-700">Cause: {record.cause}</p>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-gray-600">
-                    <div>CPU: {record.cpu_val}%</div>
-                    <div>RAM: {record.ram_val}%</div>
-                    <div>Disk: {record.disk_val}%</div>
-                    <div>Network: {record.net_val}%</div>
-                  </div>
-                </div>
-              ))}
+        <div className="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-xl shadow-slate-950/30">
+          <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Anomaly summary</p>
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="rounded-3xl bg-slate-900 p-4 text-center">
+              <p className="text-3xl font-semibold text-slate-100">{history.length}</p>
+              <p className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-500">Events</p>
             </div>
-          ) : (
-            <p className="text-gray-600">No recent anomaly records for this instance.</p>
-          )}
+            <div className="rounded-3xl bg-slate-900 p-4 text-center text-rose-300">
+              <p className="text-3xl font-semibold">{anomalyCounts.critical}</p>
+              <p className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-500">Critical</p>
+            </div>
+            <div className="rounded-3xl bg-slate-900 p-4 text-center text-amber-300">
+              <p className="text-3xl font-semibold">{anomalyCounts.warning}</p>
+              <p className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-500">Warnings</p>
+            </div>
+          </div>
+          <div className="mt-6 rounded-3xl border border-slate-800 bg-slate-900 p-4">
+            <p className="text-sm font-medium text-slate-300">Current Alert</p>
+            <p className="mt-3 text-sm text-slate-400">{instanceData.reason || 'No active alert reason available.'}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(560px,1fr)_minmax(320px,0.6fr)]">
+        <div className="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-xl shadow-slate-950/30">
+          <div className="flex items-center justify-between gap-4 pb-4">
+            <div>
+              <p className="text-sm uppercase tracking-[0.24em] text-cyan-300/80">Performance trends</p>
+              <h2 className="mt-2 text-2xl font-semibold text-slate-100">Last 30 days</h2>
+            </div>
+            <div className="rounded-full bg-slate-900 px-3 py-1 text-xs uppercase tracking-[0.24em] text-slate-400">Live data</div>
+          </div>
+          <div className="h-[360px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={monthlyData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="day" stroke="#64748b" tickLine={false} axisLine={false} />
+                <YAxis stroke="#64748b" width={32} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '10px', color: '#f8fafc' }} cursor={{ stroke: '#0ea5e9', strokeWidth: 2 }} />
+                <Area type="monotone" dataKey="cpu" stroke="#38bdf8" fill="#0f172a" fillOpacity={0.5} />
+                <Area type="monotone" dataKey="ram" stroke="#22c55e" fill="#0f172a" fillOpacity={0.4} />
+                <Area type="monotone" dataKey="disk" stroke="#a78bfa" fill="#0f172a" fillOpacity={0.3} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Peak CPU</p>
+              <p className="mt-3 text-2xl font-semibold text-slate-100">{Math.max(...monthlyData.map((item) => item.cpu))}%</p>
+            </div>
+            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Peak RAM</p>
+              <p className="mt-3 text-2xl font-semibold text-slate-100">{Math.max(...monthlyData.map((item) => item.ram))}%</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-xl shadow-slate-950/30">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Instance details</p>
+                <h3 className="mt-2 text-2xl font-semibold text-slate-100">Quick insight</h3>
+              </div>
+            </div>
+            <dl className="mt-6 grid gap-4 text-sm text-slate-400 sm:grid-cols-2">
+              <div className="rounded-3xl bg-slate-900 p-4">
+                <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Status</dt>
+                <dd className="mt-2 font-semibold text-slate-100">{instanceData.status}</dd>
+              </div>
+              <div className="rounded-3xl bg-slate-900 p-4">
+                <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Alerts</dt>
+                <dd className="mt-2 font-semibold text-slate-100">{history.length}</dd>
+              </div>
+              <div className="rounded-3xl bg-slate-900 p-4">
+                <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Last updated</dt>
+                <dd className="mt-2 font-semibold text-slate-100">{new Date().toLocaleTimeString()}</dd>
+              </div>
+              <div className="rounded-3xl bg-slate-900 p-4">
+                <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Reason</dt>
+                <dd className="mt-2 text-slate-300">{instanceData.reason || 'No active issue.'}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-xl shadow-slate-950/30">
+            <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Network insights</p>
+            <div className="mt-4 rounded-3xl bg-slate-900 p-4 text-slate-300">
+              <p className="text-sm text-slate-400">Current network throughput and historical stability.</p>
+              <div className="mt-4 grid gap-3">
+                <div className="flex items-center justify-between rounded-2xl bg-slate-950 p-4">
+                  <span className="text-sm text-slate-400">Average throughput</span>
+                  <span className="text-sm font-semibold text-slate-100">{Math.round(monthlyData.reduce((acc, item) => acc + item.network, 0) / Math.max(monthlyData.length, 1))} KB/s</span>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl bg-slate-950 p-4">
+                  <span className="text-sm text-slate-400">Maximum throughput</span>
+                  <span className="text-sm font-semibold text-slate-100">{Math.max(...monthlyData.map((item) => item.network))} KB/s</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
