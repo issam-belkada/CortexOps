@@ -9,6 +9,7 @@ from app.log_service import log_analyzer
 from app.database import SessionLocal, AnomalyRecord, InstanceStatus, init_db
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
+import re
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CRITICAL: Define client lists BEFORE routes and lifespan so every coroutine
@@ -431,6 +432,83 @@ async def verify_anomaly(anomaly_id: int):
         return {"status": "error", "message": "Not found"}, 404
     finally:
         db.close()
+        
+
+@app.get("/api/v1/instances/{instance_id}/monthly-intelligence")
+async def get_instance_monthly_intelligence(instance_id: str):
+    end_time = time.time()
+    start_time = end_time - (30 * 24 * 3600)
+    step = "3600" # 1 hour points
+
+    instance_metrics = {}
+    
+    for name, query in QUERIES.items():
+        # 1. Regex handles 'remote-server-02' matching 'remote-server-02:9100'
+        instance_filter = f'instance=~"^{instance_id}(:.*)?$"'
+        
+        # 2. Advanced Injection Logic
+        # This prevents breaking global queries used elsewhere
+        if '{' in query:
+            # For CPU, Disk, Network: Inject into existing braces
+            specific_query = query.replace('{', f'{{{instance_filter},', 1)
+        else:
+            # For RAM: Inject filter into every node_exporter metric name found in the string
+            # Example: node_memory_MemTotal_bytes -> node_memory_MemTotal_bytes{instance=~"..."}
+            specific_query = re.sub(r'(node_[a-zA-Z_0-9]+)', rf'\1{{{instance_filter}}}', query)
+
+        params = {
+            "query": specific_query,
+            "start": start_time,
+            "end": end_time,
+            "step": step
+        }
+        
+        try:
+            response = requests.get("http://localhost:9090/api/v1/query_range", params=params, timeout=5)
+            res_json = response.json()
+            
+            if res_json.get("status") == "success":
+                results = res_json.get("data", {}).get("result", [])
+                if results and len(results) > 0:
+                    instance_metrics[name] = results[0].get("values", [])
+                else:
+                    instance_metrics[name] = []
+                    print(f"[Prometheus] No data for {name}. Query used: {specific_query}")
+            else:
+                instance_metrics[name] = []
+                
+        except Exception as e:
+            print(f"[Prometheus] Request failed for {name}: {e}")
+            instance_metrics[name] = []
+
+    # Fetch this specific instance's anomalies from DB
+    db = SessionLocal()
+    month_ago = datetime.utcnow() - timedelta(days=30)
+    anomalies = db.query(AnomalyRecord).filter(
+        AnomalyRecord.instance == instance_id,
+        AnomalyRecord.timestamp >= month_ago
+    ).order_by(AnomalyRecord.timestamp.desc()).all()
+    
+    # Get current status
+    status_obj = db.query(InstanceStatus).filter_by(instance=instance_id).first()
+    db.close()
+
+    return {
+        "instance": instance_id,
+        "status": status_obj.status if status_obj else "Unknown",
+        "reason": status_obj.reason if status_obj else "N/A",
+        "metrics": instance_metrics,
+        "anomaly_count": len(anomalies),
+        "history": [
+            {
+                "id": a.id,
+                "timestamp": a.timestamp.isoformat(),
+                "trigger": a.trigger_type,
+                "cause": a.cause,
+                "metrics": {"cpu": a.cpu_val, "ram": a.ram_val, "disk": a.disk_val}
+            } for a in anomalies
+        ]
+    }
 
 
 if __name__ == "__main__":
